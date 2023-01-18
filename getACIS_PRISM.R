@@ -7,7 +7,7 @@ library(jsonlite)
 library(raster)    
 # create current date
 dateRangeStart="1900-01-01"
-dateRangeEnd= "2021-12-31"
+dateRangeEnd= "2022-12-31"
 
 # generate dates -- keep with PRISM date
 allDates<-seq(as.Date(dateRangeStart), as.Date(dateRangeEnd),by="month")
@@ -15,6 +15,9 @@ allDates<-seq(as.Date(dateRangeStart), as.Date(dateRangeEnd),by="month")
 # Set bounding box for PRISM extract
 # AZ/NM bbox -115.004883,31.184609,-102.524414,37.387617
 ACISbbox<- "-113.005371,34.642247,-111.132202,36.897194"
+
+ACISbbox<-"-113.046570,31.377089,-111.088257,32.976412"
+
 
 # ACIS query in JSON
 jsonQuery=paste0('{"bbox":"',ACISbbox,'","sdate":"',dateRangeStart,'","edate":"',dateRangeEnd,'","grid":"21","elems":"mly_pcpn","meta":"ll,elev","output":"json"}') # or uid
@@ -98,6 +101,15 @@ download.file("https://www.fs.usda.gov/r3/gis/gisdata/Rangeland.zip", destfile =
   avgSPI <- t(extract(rstSPI, poly, fun='mean', na.rm=TRUE, df=TRUE, weights = FALSE))
   avgSPI <- avgSPI[2:nrow(avgSPI),] # drop that first ID row
   avgSPI <- cbind.data.frame(allDates, avgSPI)
+  
+  # plot leaflet of districts
+  library(leaflet)
+  
+  leaflet(kaibab_forest) %>%  addTiles() %>%
+    addPolygons(color = "#444444", weight = 1, smoothFactor = 0.5,
+                opacity = 1.0, fillOpacity = 0.5)
+  
+  
   
 #####  
 # plot with basemap

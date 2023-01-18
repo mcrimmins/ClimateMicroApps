@@ -62,7 +62,10 @@ getSNOTELdata<-function(stationName, season){
     dplyr::group_by(year) %>% # change to year
     dplyr::summarise(swe=max(snow_water_equivalent, na.rm=TRUE),
               nDays=sum(!is.na(snow_water_equivalent)),
-              nMiss=sum(is.na(snow_water_equivalent)))
+              nMiss=sum(is.na(snow_water_equivalent)),
+              minDate=min(date, na.rm = TRUE),
+              maxDate=max(date, na.rm = TRUE))
+
   # calculate anomalies
   yearSWE<-yearSWE %>% 
     dplyr::mutate(meanSWE=mean(swe, na.rm=TRUE)) %>%
@@ -73,15 +76,26 @@ getSNOTELdata<-function(stationName, season){
     dplyr::group_by(year) %>% # change to year
     dplyr::summarise(precip=sum(precipitation, na.rm=TRUE),
               nDays=sum(!is.na(precipitation)),
-              nMiss=sum(is.na(precipitation)))
+              nMiss=sum(is.na(precipitation)),
+              minDate=min(date, na.rm = TRUE),
+              maxDate=max(date, na.rm = TRUE))
+
   # calculate anomalies
   yearPRECIP<-yearPRECIP %>% 
     dplyr::mutate(meanPRECIP=mean(precip, na.rm=TRUE)) %>%
     dplyr::mutate(anomPRECIP=precip-meanPRECIP)
   
+  # pull out latest year
+  currData<-cbind.data.frame(siteMeta$description,round(siteMeta$elev*3.28084,0),
+                             paste0(format(siteMeta$start,"%Y"),"-",format(siteMeta$end,"%Y")),
+                             round(yearSWE$swe[nrow(yearSWE)],2),round(yearSWE$anomSWE[nrow(yearSWE)],2),
+                             round(yearPRECIP$precip[nrow(yearPRECIP)],2),round(yearPRECIP$anomPRECIP[nrow(yearPRECIP)],2))
+  colnames(currData)<-c('Station','Elev (ft)','POR','Max SWE (in)','Max SWE Anom (in)','Total Precip (in)','Precip Anom (in)')
+  seasLabel<-paste0(yearPRECIP$minDate[nrow(yearPRECIP)]," to ",yearPRECIP$maxDate[nrow(yearPRECIP)])
+  
   # put into list
-  snotelList<-list(yearSWE, yearPRECIP, siteMeta)
-  names(snotelList)<-c("maxSWE","totalPrecip","siteMeta")
+  snotelList<-list(yearSWE, yearPRECIP, siteMeta, currData, seasLabel)
+  names(snotelList)<-c("maxSWE","totalPrecip","siteMeta","current_seas","season_label")
   
   # return data
   return(snotelList)

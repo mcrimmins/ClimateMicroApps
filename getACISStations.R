@@ -9,14 +9,15 @@
 # Arguments
 # stations ...station code 'sids' from https://www.rcc-acis.org/docs_webservices.html
 # season ...vector of month numbers to define season, for example c(10,11,12,1,2) for Oct-Feb
+# current year...specify year of interest
 #
 # Example
-# stationData<-getACISStations(c("020678", "USW00003195", "USS0012P02S"),c(7,8,9))
+# stationData<-getACISStations(c("020678", "USW00003195", "USS0012P02S"),c(7,8,9), 2023)
 
 library(magrittr)
 
-getACISStations<-function(stations, season){
- 
+getACISStations<-function(stations, season, currYr){
+  
   # water year function
   wtr_yr <- function(dates, start_month) {
     # Convert dates into POSIXlt
@@ -109,22 +110,25 @@ getACISStations<-function(stations, season){
       dplyr::mutate(meanTEMP=mean(avgTemp, na.rm=TRUE)) %>%
       dplyr::mutate(anomTEMP=avgTemp-meanTEMP) 
     
+    # select year
+    rowYr<-which(yearCLIM$year==currYr)
+    
     # put latest year into list
     stationCLIM[[i]]<-cbind.data.frame(meta$name[i], meta$elev[i],
                                        paste0(min(yearCLIM$year),"-",max(yearCLIM$year)),
-                                       yearCLIM$precipSum[nrow(yearCLIM)],
-                                       round(yearCLIM$anomPRECIP[nrow(yearCLIM)],2),
-                                       yearCLIM$precipDays[nrow(yearCLIM)],
-                                       yearCLIM$snowSum[nrow(yearCLIM)],
-                                       round(yearCLIM$avgTemp[nrow(yearCLIM)],1),
-                                       round(yearCLIM$anomTEMP[nrow(yearCLIM)],2),
-                                       yearCLIM$freezeDays[nrow(yearCLIM)])
+                                       yearCLIM$precipSum[rowYr],
+                                       round(yearCLIM$anomPRECIP[rowYr],2),
+                                       yearCLIM$precipDays[rowYr],
+                                       yearCLIM$snowSum[rowYr],
+                                       round(yearCLIM$avgTemp[rowYr],1),
+                                       round(yearCLIM$anomTEMP[rowYr],2),
+                                       yearCLIM$freezeDays[rowYr])
     
     # time period label
     if(season[1]>season[length(season)]){
-      seasLabel<-paste0(month.abb[season[1]]," ",yearCLIM$year[nrow(yearCLIM)]-1,"-",month.abb[season[length(season)]]," ",yearCLIM$year[nrow(yearCLIM)])
+      seasLabel<-paste0(month.abb[season[1]]," ",yearCLIM$year[rowYr]-1,"-",month.abb[season[length(season)]]," ",yearCLIM$year[rowYr])
     }else{
-      seasLabel<-paste0(month.abb[season[1]]," ",yearCLIM$year[nrow(yearCLIM)],"-",month.abb[season[length(season)]]," ",yearCLIM$year[nrow(yearCLIM)])
+      seasLabel<-paste0(month.abb[season[1]]," ",yearCLIM$year[rowYr],"-",month.abb[season[length(season)]]," ",yearCLIM$year[rowYr])
     }
     
   }
@@ -133,14 +137,13 @@ getACISStations<-function(stations, season){
   stationCLIM<-do.call(rbind, stationCLIM)
   # rename columns
   colnames(stationCLIM)<-c('Station','Elev (ft)','POR','Total Precip (in)','Precip Anom (in)','Days with Precip','Total Snow (in)',
-                           'Avg Temp (F)','Temp Anom (F)','Days <32F')
+                           'Avg Temp (F)','Temp Anom (F)','Freeze Days')
   
   # put into list
-  stationList<-list(stationCLIM, seasLabel)
-  names(stationList)<-c("station_climate_summary","season_label")
+  stationList<-list(stationCLIM, seasLabel, meta)
+  names(stationList)<-c("station_climate_summary","season_label","metaData")
   
   # return data
   return(stationList)
   
 }
-

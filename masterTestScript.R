@@ -6,11 +6,17 @@ library(kableExtra)
 
 
 # set season
-season<-c(10,11,12,1,2,3,4,5,6,7,8,9)
+#season<-c(10,11,12,1,2,3,4,5,6,7,8,9)
+season<-c(12,1,2)
+currYr<-2023
+
+stations<-c("028820","023668","027530")
 
 # generate station table
 source('getACISStations.R')
-stationCLIM<-getACISStations(c("020678", "USW00003195", "USS0012P02S"),season)
+#stationCLIM<-getACISStations(c("020678", "USW00003195", "USS0012P02S"),season)
+stationCLIM<-getACISStations(c("028820","023668","027530"),season, currYr)
+
 
 stationCLIM$station_climate_summary %>%
   kbl(caption = paste0("Station climate summaries: ",stationCLIM$season_label)) %>%

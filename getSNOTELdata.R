@@ -65,6 +65,7 @@ getSNOTELdata<-function(stationName, season){
               nMiss=sum(is.na(snow_water_equivalent)),
               minDate=min(date, na.rm = TRUE),
               maxDate=max(date, na.rm = TRUE))
+  yearSWE$swe[yearSWE$swe<0]<-NA
 
   # calculate anomalies
   yearSWE<-yearSWE %>% 

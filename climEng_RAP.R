@@ -1,5 +1,10 @@
 # testing climate engine for plotting RAP data
 # MAC 08/21/23
+# links to info
+# https://support.climateengine.org
+# https://docs.climateengine.org/docs/build/html/overview.html
+# https://api.climateengine.org/docs
+
 
 library(raster)
 library(httr) # HTTP API requests
@@ -26,11 +31,22 @@ ShapeFile2<-rgdal::readOGR("./shapes/RangerDistrict.gdb")
 Level2Data<-subset(ShapeFile2, FORESTNAME=="Kaibab National Forest")
 Level2Data<-spTransform(Level2Data, CRS("+proj=longlat +datum=WGS84"))
 
+# # rmu level
+# # rgdal::ogrListLayers("./shapes/rmu.gdb")
+# ShapeFile2<-rgdal::readOGR("./shapes/rmu.gdb")
+# Level2Data<-subset(ShapeFile2, ADMIN_ORG_NAME=="WILLIAMS RANGER DISTRICT")
+# Level2Data<-spTransform(Level2Data, CRS("+proj=longlat +datum=WGS84"))
+
 # get bounding box coords
 bbox<-paste0("[",extent(Level2Data)@xmin-0.1,",",extent(Level2Data)@ymin-0.1,
              ",",extent(Level2Data)@xmax+0.1,",",extent(Level2Data)@ymax+0.1,"]")
 
-#####
+# set small bbox
+
+bbox<-"[-111.809578,35.141283,-111.798720,35.149530]"
+centroid<-paste0("[[",(-111.809578+-111.798720)/2,",",(35.141283+35.149530)/2,"]]")
+
+##### get time series -----
 # get timeseries of RAP data
 # following https://github.com/Google-Drought/SupportSiteTutorials/blob/a038ee1e69fff32008d8619c0acc6db082d5795d/Timeseries/Blends_Example.Rmd
 centroids<-rgeos::gCentroid(Level2Data,byid=TRUE)
@@ -41,12 +57,13 @@ root_url <- 'https://api.climateengine.org/'
 endpoint <- "timeseries/native/points"
 
 # Define API arguments time-series endpoint to get long-term blend data 
-query <- list(dataset = 'RAP_BIOMASS_16DAY',
-              variable = "herbaceousAGB_mask",
+query <- list(dataset = 'RAP_PRODUCTION_16DAY',
+              variable = "herbaceousAGB",
               start_date = '1986-01-01',
               end_date = Sys.Date(),
               #buffer = '1000',
               coordinates = paste0("[[",centroids@coords[1,1],",",centroids@coords[1,2],"]]"),
+              #coordinates = centroid,
               area_reducer = 'mean')
 
 # Run GET request to get data
@@ -74,16 +91,18 @@ generate_data_frame <- function(col, df){
 rapTS <- map(rapTS_cols, generate_data_frame, rapTS) %>%
   bind_cols() %>%
   mutate(Date = as.Date(Date),
-         Value = as.numeric(`herbaceousAGB_mask (lbs/acre)`),
+         Value = as.numeric(`herbaceousAGB (lbs/acre)`),
          Variable = "herbaceousAGB (lbs/acre)") %>%
   filter(Value > 0) %>%
-  select(-`herbaceousAGB_mask (lbs/acre)`)
+  select(-`herbaceousAGB (lbs/acre)`)
 
 # plot a time series
-# ggplot(rapTS, aes(Date,Value))+
-#   geom_line()+
-#   ggtitle(paste0("RAP herbAGB (lbs/ac) at ",centroids@coords[1,1],",",centroids@coords[1,2]))
+ggplot(rapTS, aes(Date,Value))+
+  geom_line()+
+  ggtitle(paste0("RAP herbAGB (lbs/ac) at ",centroids@coords[1,1],",",centroids@coords[1,2]))
 #####
+
+gcs_upload(rapTS, bucket=bucket)
 
 ##### download raw RAP raster ----
 tempFile<-"rawRAP"
@@ -93,8 +112,9 @@ print(paste0("Processing ", tempFile))
 
 endpoint = '/raster/export/values'
 
-query <- list(dataset = 'RAP_BIOMASS_16DAY',
-              variable = "herbaceousAGB_mask",
+##### q1 - raw data, latest period ----
+query <- list(dataset = 'RAP_PRODUCTION_16DAY',
+              variable = "herbaceousAGB",
               temporal_statistic = "mean",
               bounding_box = bbox,
               export_path = exportPath,
@@ -102,6 +122,18 @@ query <- list(dataset = 'RAP_BIOMASS_16DAY',
               end_date = rapTS$Date[nrow(rapTS)],
               start_year = '1986',
               end_year = '2022'
+)
+#####
+
+##### q2 - total production since Jan 1st
+query <- list(dataset = 'RAP_PRODUCTION_16DAY',
+              variable = "herbaceousAGB",
+              temporal_statistic = "total",
+              bounding_box = bbox,
+              export_path = exportPath,
+              #export_resolution = 1000,
+              start_date = paste0(format(rapTS$Date[nrow(rapTS)], "%Y"),"-01-01"),
+              end_date = rapTS$Date[nrow(rapTS)]
 )
 
 # Run GET request to get data
@@ -132,17 +164,33 @@ print(paste0("Processing ", tempFile))
 
 endpoint = '/raster/export/anomalies'
 
-query <- list(dataset = 'RAP_BIOMASS_16DAY',
-              variable = "herbaceousAGB_mask",
-              temporal_statistic = "mean",
+##### q1 --- anomaly of most recent period -----
+# query <- list(dataset = 'RAP_PRODUCTION_16DAY',
+#               variable = "herbaceousAGB_mask",
+#               temporal_statistic = "mean",
+#               bounding_box = bbox,
+#               export_path = exportPath,
+#               start_date = rapTS$Date[nrow(rapTS)],
+#               end_date = rapTS$Date[nrow(rapTS)],
+#               start_year = '1986',
+#               end_year = '2022',
+#               calculation = 'anom'
+#              )
+#####
+
+##### q2 -- anomaly of cumulative production ----
+query <- list(dataset = 'RAP_PRODUCTION_16DAY',
+              variable = "herbaceousAGB",
+              temporal_statistic = "total",
               bounding_box = bbox,
               export_path = exportPath,
-              start_date = rapTS$Date[nrow(rapTS)],
+              start_date = paste0(format(rapTS$Date[nrow(rapTS)], "%Y"),"-01-01"),
               end_date = rapTS$Date[nrow(rapTS)],
               start_year = '1986',
-              end_year = '2022',
+              end_year = format(rapTS$Date[nrow(rapTS)], "%Y"),
               calculation = 'anom'
-             )
+)
+#####
 
 # Run GET request to get data
 get_raster <- GET(paste0(root_url, endpoint), config = add_headers(Authorization = key), query = query)
@@ -172,16 +220,31 @@ print(paste0("Processing ", tempFile))
 
 endpoint = '/raster/export/percentiles'
 
-query <- list(dataset = 'RAP_BIOMASS_16DAY',
-              variable = "herbaceousAGB_mask",
-              temporal_statistic = "mean",
+##### q1 - percentiles of most recent period -----
+# query <- list(dataset = 'RAP_PRODUCTION_16DAY',
+#               variable = "herbaceousAGB_mask",
+#               temporal_statistic = "mean",
+#               bounding_box = bbox,
+#               export_path = exportPath,
+#               start_date = rapTS$Date[nrow(rapTS)],
+#               end_date = rapTS$Date[nrow(rapTS)],
+#               start_year = '1986',
+#               end_year = '2022'
+# )
+#####
+
+##### q2 - percentiles of cumulative total -----
+query <- list(dataset = 'RAP_PRODUCTION_16DAY',
+              variable = "herbaceousAGB",
+              temporal_statistic = "total",
               bounding_box = bbox,
               export_path = exportPath,
-              start_date = rapTS$Date[nrow(rapTS)],
+              start_date = paste0(format(rapTS$Date[nrow(rapTS)], "%Y"),"-01-01"),
               end_date = rapTS$Date[nrow(rapTS)],
               start_year = '1986',
-              end_year = '2022'
+              end_year = format(rapTS$Date[nrow(rapTS)], "%Y")
 )
+#####
 
 # Run GET request to get data
 get_raster <- GET(paste0(root_url, endpoint), config = add_headers(Authorization = key), query = query)
@@ -219,17 +282,17 @@ percRAP<-raster("./climEng/percRAP.tif")
 poly<-fortify(Level2Data)
 
 # use RPMS as mask
-# rpms<-raster("./data/2022rpms.tif")
-#   rpms<-crop(rpms,rawRAP)
-# rawRAP<-mask(rawRAP,rpms)
-# anomRAP<-mask(anomRAP,rpms)
-# percRAP<-mask(percRAP,rpms)
+rpms<-raster("./data/2022rpms.tif")
+  rpms<-crop(rpms,rawRAP)
+rawRAP<-mask(rawRAP,rpms)
+anomRAP<-mask(anomRAP,rpms)
+percRAP<-mask(percRAP,rpms)
 
 # make maps
 pRAW<-rasterVis::gplot(rawRAP) + geom_tile(aes(fill = value)) +
   #facet_wrap(~ variable) +
-  scale_fill_gradient2(low = 'brown', mid="yellow", high = 'forestgreen', midpoint=25, limits=c(0, 50), oob=squish, name="lbs/ac") +
-  geom_polygon(data=poly, aes(x = long, y = lat, group = group), fill=NA, color="black")+
+  scale_fill_gradient2(low = 'brown', mid="yellow", high = 'forestgreen', midpoint=500, limits=c(0, 1000), oob=squish, name="lbs/ac") +
+  #geom_polygon(data=poly, aes(x = long, y = lat, group = group), fill=NA, color="black")+
   scale_x_continuous(expand=c(0,0))+
   scale_y_continuous(expand=c(0,0)) +
   coord_equal()+
@@ -273,7 +336,7 @@ pPerc16<-rasterVis::gplot(percRAP) + geom_tile(aes(fill = value)) +
 
 p<-plot_grid(pRAW,pAnom,pPerc,pPerc16)
 
-save_plot("RAP_percentiles_CEmasked.png",p,base_height = 15, base_width = 11.5)
+save_plot("RAP_percentiles_RPMSmask.png",p,base_height = 15, base_width = 11.5)
 
 #####
 # get zonal stats from districts
@@ -281,7 +344,7 @@ save_plot("RAP_percentiles_CEmasked.png",p,base_height = 15, base_width = 11.5)
 
 spatStats<-list()
 for(i in 1:length(Level2Data@polygons)){
-  clip1 <- crop(rapAnom, extent(Level2Data[i,])) #crop to extent of polygon
+  clip1 <- crop(anomRAP, extent(Level2Data[i,])) #crop to extent of polygon
   clip2 <- rasterize(Level2Data[i,], clip1, mask=TRUE) #crops to polygon edge & converts to raster
   ext <- getValues(clip2)
   spatStats[[i]]<- cbind.data.frame(
